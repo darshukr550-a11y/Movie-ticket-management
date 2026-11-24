@@ -1,0 +1,430 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Hardened Primitives
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSeatId(id) {
+      return id is string && id.size() >= 2 && id.size() <= 16 && id.matches('^[A-Z][0-9]{1,2}$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'darshankr550@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isStringBounded(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isNonEmptyStringList(arr, maxSize) {
+      return arr is list && arr.size() >= 1 && arr.size() <= maxSize && arr[0] is string;
+    }
+
+    function isOptionalStringList(arr, maxSize) {
+      return arr is list && arr.size() <= maxSize && (arr.size() == 0 || arr[0] is string);
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidUser(data, userId) {
+      return data.keys().hasAll(['user_id', 'name', 'email', 'phone', 'role', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['user_id', 'name', 'email', 'phone', 'role', 'createdAt', 'updatedAt']) &&
+        isValidId(data.user_id) &&
+        data.user_id == userId &&
+        isStringBounded(data.name, 1, 100) &&
+        isStringBounded(data.email, 3, 160) &&
+        isStringBounded(data.phone, 0, 24) &&
+        data.role in ['customer', 'admin'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminMarker(data, uid) {
+      return data.keys().hasAll(['uid', 'email', 'grantedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'grantedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == uid &&
+        isStringBounded(data.email, 3, 160) &&
+        data.grantedAt is timestamp;
+    }
+
+    function isValidMovie(data, movieId) {
+      return data.keys().hasAll([
+          'movie_id', 'title', 'genre', 'duration', 'rating', 'language',
+          'releaseDate', 'description', 'posterUrl', 'bannerUrl', 'cast',
+          'crew', 'formats', 'status', 'trending', 'recommended', 'featured',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'movie_id', 'title', 'genre', 'duration', 'rating', 'language',
+          'releaseDate', 'description', 'posterUrl', 'bannerUrl', 'trailerUrl',
+          'cast', 'crew', 'formats', 'status', 'trending', 'recommended', 'featured',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.movie_id) &&
+        data.movie_id == movieId &&
+        isStringBounded(data.title, 1, 140) &&
+        isStringBounded(data.genre, 1, 80) &&
+        isStringBounded(data.duration, 1, 32) &&
+        data.rating is number && data.rating >= 0 && data.rating <= 10 &&
+        isStringBounded(data.language, 1, 64) &&
+        isStringBounded(data.releaseDate, 1, 32) &&
+        isStringBounded(data.description, 1, 2000) &&
+        isStringBounded(data.posterUrl, 1, 500) &&
+        isStringBounded(data.bannerUrl, 1, 500) &&
+        (!('trailerUrl' in data) || isStringBounded(data.trailerUrl, 0, 500)) &&
+        isOptionalStringList(data.cast, 20) &&
+        isOptionalStringList(data.crew, 20) &&
+        isNonEmptyStringList(data.formats, 10) &&
+        data.status in ['now_showing', 'coming_soon'] &&
+        data.trending is bool &&
+        data.recommended is bool &&
+        data.featured is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTheatre(data, theatreId) {
+      return data.keys().hasAll(['theatre_id', 'name', 'city', 'address', 'screens', 'amenities', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['theatre_id', 'name', 'city', 'address', 'screens', 'amenities', 'createdAt', 'updatedAt']) &&
+        isValidId(data.theatre_id) &&
+        data.theatre_id == theatreId &&
+        isStringBounded(data.name, 1, 140) &&
+        isStringBounded(data.city, 1, 64) &&
+        isStringBounded(data.address, 1, 240) &&
+        data.screens is number && data.screens >= 1 && data.screens <= 30 &&
+        isOptionalStringList(data.amenities, 12) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidShow(data, showId) {
+      return data.keys().hasAll([
+          'show_id', 'movie_id', 'theatre_id', 'city', 'screenName',
+          'showDate', 'showTime', 'format', 'silverPrice', 'goldPrice',
+          'premiumPrice', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'show_id', 'movie_id', 'theatre_id', 'city', 'screenName',
+          'showDate', 'showTime', 'format', 'silverPrice', 'goldPrice',
+          'premiumPrice', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.show_id) &&
+        data.show_id == showId &&
+        isValidId(data.movie_id) &&
+        isValidId(data.theatre_id) &&
+        isStringBounded(data.city, 1, 64) &&
+        isStringBounded(data.screenName, 1, 64) &&
+        isStringBounded(data.showDate, 1, 20) &&
+        isStringBounded(data.showTime, 1, 24) &&
+        isStringBounded(data.format, 1, 32) &&
+        data.silverPrice is number && data.silverPrice >= 50 && data.silverPrice <= 5000 &&
+        data.goldPrice is number && data.goldPrice >= 50 && data.goldPrice <= 5000 &&
+        data.premiumPrice is number && data.premiumPrice >= 50 && data.premiumPrice <= 10000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidShowSeat(data, showId, seatId) {
+      return data.keys().hasAll(['seat_id', 'show_id', 'booking_id', 'user_id', 'category', 'price', 'status', 'bookedAt']) &&
+        data.keys().hasOnly(['seat_id', 'show_id', 'booking_id', 'user_id', 'category', 'price', 'status', 'bookedAt']) &&
+        isValidSeatId(data.seat_id) &&
+        data.seat_id == seatId &&
+        isValidId(data.show_id) &&
+        data.show_id == showId &&
+        isValidId(data.booking_id) &&
+        isValidId(data.user_id) &&
+        data.category in ['silver', 'gold', 'premium'] &&
+        data.price is number && data.price >= 0 && data.price <= 10000 &&
+        data.status in ['booked', 'blocked'] &&
+        data.bookedAt is timestamp;
+    }
+
+    function isValidBooking(data, bookingId) {
+      return data.keys().hasAll([
+          'booking_id', 'user_id', 'user_name', 'user_email', 'show_id', 'movie_id',
+          'movie_title', 'movie_poster', 'theatre_id', 'theatre_name', 'theatre_address',
+          'city', 'screen_name', 'show_date', 'show_time', 'seat_numbers', 'ticket_count',
+          'ticket_subtotal', 'convenience_fee', 'total_amount', 'payment_status',
+          'booking_status', 'payment_method', 'transaction_ref', 'verification_code',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'booking_id', 'user_id', 'user_name', 'user_email', 'show_id', 'movie_id',
+          'movie_title', 'movie_poster', 'theatre_id', 'theatre_name', 'theatre_address',
+          'city', 'screen_name', 'show_date', 'show_time', 'seat_numbers', 'ticket_count',
+          'ticket_subtotal', 'convenience_fee', 'total_amount', 'payment_status',
+          'booking_status', 'payment_method', 'transaction_ref', 'verification_code',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.booking_id) &&
+        data.booking_id == bookingId &&
+        isValidId(data.user_id) &&
+        isStringBounded(data.user_name, 1, 100) &&
+        isStringBounded(data.user_email, 3, 160) &&
+        isValidId(data.show_id) &&
+        isValidId(data.movie_id) &&
+        isStringBounded(data.movie_title, 1, 140) &&
+        isStringBounded(data.movie_poster, 1, 500) &&
+        isValidId(data.theatre_id) &&
+        isStringBounded(data.theatre_name, 1, 140) &&
+        isStringBounded(data.theatre_address, 1, 240) &&
+        isStringBounded(data.city, 1, 64) &&
+        isStringBounded(data.screen_name, 1, 64) &&
+        isStringBounded(data.show_date, 1, 20) &&
+        isStringBounded(data.show_time, 1, 24) &&
+        isNonEmptyStringList(data.seat_numbers, 10) &&
+        data.ticket_count is number && data.ticket_count == data.seat_numbers.size() &&
+        data.ticket_subtotal is number && data.ticket_subtotal > 0 &&
+        data.convenience_fee is number && data.convenience_fee >= 0 &&
+        data.total_amount is number && data.total_amount > 0 &&
+        data.payment_status in ['paid', 'failed', 'refunded'] &&
+        data.booking_status in ['confirmed', 'cancelled'] &&
+        isStringBounded(data.payment_method, 1, 40) &&
+        isStringBounded(data.transaction_ref, 1, 100) &&
+        isStringBounded(data.verification_code, 4, 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPayment(data, paymentId) {
+      return data.keys().hasAll([
+          'payment_id', 'booking_id', 'user_id', 'amount', 'method',
+          'status', 'transaction_ref', 'mode', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'payment_id', 'booking_id', 'user_id', 'amount', 'method',
+          'status', 'transaction_ref', 'mode', 'createdAt'
+        ]) &&
+        isValidId(data.payment_id) &&
+        data.payment_id == paymentId &&
+        isValidId(data.booking_id) &&
+        isValidId(data.user_id) &&
+        data.amount is number && data.amount > 0 &&
+        data.method in ['upi', 'debit_card', 'credit_card', 'wallet'] &&
+        data.status in ['paid', 'failed', 'refunded'] &&
+        isStringBounded(data.transaction_ref, 1, 100) &&
+        data.mode in ['simulated', 'gateway'] &&
+        data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Rules
+    // -------------------------------------------------------------------------
+
+    match /test/connection {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        isValidUser(incoming(), userId) &&
+        (isOwner(userId) || isAdmin()) &&
+        (isAdmin() || incoming().role == 'customer') &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        isValidUser(incoming(), userId) &&
+        incoming().user_id == existing().user_id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(uid) &&
+        isValidAdminMarker(incoming(), uid) &&
+        incoming().grantedAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(uid) && isAdmin();
+    }
+
+    match /movies/{movieId} {
+      allow get: if isValidId(movieId);
+      allow list: if true;
+      allow create: if isAdmin() &&
+        isValidId(movieId) &&
+        isValidMovie(incoming(), movieId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(movieId) &&
+        isValidMovie(incoming(), movieId) &&
+        incoming().movie_id == existing().movie_id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(movieId) && isAdmin();
+    }
+
+    match /theatres/{theatreId} {
+      allow get: if isValidId(theatreId);
+      allow list: if true;
+      allow create: if isAdmin() &&
+        isValidId(theatreId) &&
+        isValidTheatre(incoming(), theatreId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(theatreId) &&
+        isValidTheatre(incoming(), theatreId) &&
+        incoming().theatre_id == existing().theatre_id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(theatreId) && isAdmin();
+    }
+
+    match /shows/{showId} {
+      allow get: if isValidId(showId);
+      allow list: if true;
+      allow create: if isAdmin() &&
+        isValidId(showId) &&
+        isValidShow(incoming(), showId) &&
+        exists(/databases/$(database)/documents/movies/$(incoming().movie_id)) &&
+        exists(/databases/$(database)/documents/theatres/$(incoming().theatre_id)) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(showId) &&
+        isValidShow(incoming(), showId) &&
+        incoming().show_id == existing().show_id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(showId) && isAdmin();
+
+      match /seats/{seatId} {
+        allow get: if isValidId(showId) && isValidSeatId(seatId);
+        allow list: if isValidId(showId);
+        allow create: if isVerified() &&
+          isValidId(showId) &&
+          isValidSeatId(seatId) &&
+          isValidShowSeat(incoming(), showId, seatId) &&
+          incoming().bookedAt == request.time &&
+          exists(/databases/$(database)/documents/shows/$(showId)) &&
+          (
+            (
+              isAdmin() &&
+              incoming().status == 'blocked'
+            ) ||
+            (
+              incoming().user_id == request.auth.uid &&
+              incoming().status == 'booked' &&
+              existsAfter(/databases/$(database)/documents/bookings/$(incoming().booking_id)) &&
+              getAfter(/databases/$(database)/documents/bookings/$(incoming().booking_id)).data.user_id == request.auth.uid &&
+              getAfter(/databases/$(database)/documents/bookings/$(incoming().booking_id)).data.show_id == showId
+            )
+          );
+        allow update: if false;
+        allow delete: if isValidId(showId) && isValidSeatId(seatId) && (
+          isAdmin() ||
+          (
+            isVerified() &&
+            existing().status == 'booked' &&
+            existing().user_id == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/bookings/$(existing().booking_id)).data.booking_status == 'cancelled'
+          )
+        );
+      }
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && isSignedIn() && (existing().user_id == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow create: if isVerified() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming(), bookingId) &&
+        incoming().user_id == request.auth.uid &&
+        incoming().payment_status == 'paid' &&
+        incoming().booking_status == 'confirmed' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/shows/$(incoming().show_id));
+      allow update: if isVerified() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming(), bookingId) &&
+        incoming().booking_id == existing().booking_id &&
+        incoming().user_id == existing().user_id &&
+        incoming().show_id == existing().show_id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().user_id == request.auth.uid &&
+            existing().booking_status == 'confirmed' &&
+            incoming().booking_status == 'cancelled' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['booking_status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(bookingId) && isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && isSignedIn() && (existing().user_id == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow create: if isVerified() &&
+        isValidId(paymentId) &&
+        isValidPayment(incoming(), paymentId) &&
+        incoming().user_id == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/bookings/$(incoming().booking_id));
+      allow update: if isAdmin() &&
+        isValidId(paymentId) &&
+        isValidPayment(incoming(), paymentId) &&
+        incoming().payment_id == existing().payment_id &&
+        incoming().user_id == existing().user_id &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(paymentId) && isAdmin();
+    }
+  }
+}
