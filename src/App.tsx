@@ -27,6 +27,7 @@ import { ProfilePage } from './pages/ProfilePage.tsx';
 import { SeatSelectionPage } from './pages/SeatSelectionPage.tsx';
 import { TheatresPage } from './pages/TheatresPage.tsx';
 import { TicketPage } from './pages/TicketPage.tsx';
+import type { TalukLocation } from './data/karnatakaLocations.ts';
 import type {
   AppView,
   Booking,
@@ -229,6 +230,48 @@ function CineVaultApp() {
       // Keep existing seat map state
     }
   };
+
+  const handleSelectTalukLocation = useCallback(
+    async (loc: TalukLocation, stayOnCurrentPage = false) => {
+      const res = await fetch('/api/theatres/ensure-taluk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ district: loc.district, taluk: loc.taluk }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Unable to load theatre for selected taluk.');
+      }
+      const data = await res.json();
+      const ensuredTheatre = data.theatre as Theatre;
+      const ensuredShows = (data.shows || []) as Show[];
+      const ensuredLocks = (data.seatLocks || {}) as Record<string, Record<string, ShowSeatLock>>;
+
+      setTheatres((prev) => {
+        const filtered = prev.filter((t) => t.theatre_id !== ensuredTheatre.theatre_id);
+        return [...filtered, ensuredTheatre];
+      });
+
+      setShows((prev) => {
+        const map = new Map<string, Show>();
+        prev.forEach((s) => map.set(s.show_id, s));
+        ensuredShows.forEach((s) => map.set(s.show_id, s));
+        return Array.from(map.values());
+      });
+
+      setSeatLocks((prev) => ({
+        ...prev,
+        ...ensuredLocks,
+      }));
+
+      setSelectedCity(ensuredTheatre.city || loc.taluk);
+      if (!stayOnCurrentPage) {
+        setView('theatres');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    },
+    []
+  );
 
   const completeAuthNavigation = useCallback(
     async (loggedInUser: UserProfile, token: string | null) => {
@@ -486,6 +529,7 @@ function CineVaultApp() {
                 onCityChange={setSelectedCity}
                 onSearchChange={setSearchQuery}
                 onSelectMovie={handleSelectMovie}
+                onSelectTalukLocation={(loc) => handleSelectTalukLocation(loc, false)}
                 onNavigate={(v) => handleNavigate(v)}
               />
             )}
@@ -509,6 +553,7 @@ function CineVaultApp() {
                 onCityChange={setSelectedCity}
                 onSelectShow={(s) => void handleSelectShow(s)}
                 onSelectMovie={handleSelectMovie}
+                onSelectTalukLocation={(loc) => handleSelectTalukLocation(loc, true)}
               />
             )}
 
@@ -520,6 +565,7 @@ function CineVaultApp() {
                 selectedCity={selectedCity}
                 onCityChange={setSelectedCity}
                 onSelectShow={(s) => void handleSelectShow(s)}
+                onSelectTalukLocation={(loc) => handleSelectTalukLocation(loc, true)}
                 onBack={() => handleNavigate('movies')}
               />
             )}

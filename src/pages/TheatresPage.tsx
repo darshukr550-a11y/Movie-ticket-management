@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Calendar, Clock, MapPin, Monitor } from 'lucide-react';
+import { Calendar, Clock, MapPin, Monitor, Navigation } from 'lucide-react';
+import { DistrictTalukFinder } from '../components/DistrictTalukFinder.tsx';
+import type { TalukLocation } from '../data/karnatakaLocations.ts';
 import type { Movie, Show, Theatre } from '../types.ts';
 import { CITIES, formatCurrencyINR, getUpcomingDates } from '../utils/cinema.ts';
 
@@ -11,6 +13,7 @@ interface TheatresPageProps {
   onCityChange: (city: string) => void;
   onSelectShow: (show: Show) => void;
   onSelectMovie: (movie: Movie) => void;
+  onSelectTalukLocation: (loc: TalukLocation) => Promise<void> | void;
 }
 
 export function TheatresPage({
@@ -21,12 +24,21 @@ export function TheatresPage({
   onCityChange,
   onSelectShow,
   onSelectMovie,
+  onSelectTalukLocation,
 }: TheatresPageProps) {
   const dates = useMemo(() => getUpcomingDates(4), []);
   const [selectedDate, setSelectedDate] = useState(dates[0]?.iso || '');
 
+  const cityOptions = useMemo(
+    () => Array.from(new Set([...CITIES, selectedCity, ...theatres.map((t) => t.city)])),
+    [theatres, selectedCity]
+  );
+
   const cityTheatres = useMemo(
-    () => theatres.filter((t) => t.city === selectedCity),
+    () =>
+      theatres.filter(
+        (t) => t.city === selectedCity || t.taluk === selectedCity || t.district === selectedCity
+      ),
     [theatres, selectedCity]
   );
 
@@ -52,10 +64,10 @@ export function TheatresPage({
             <select
               value={selectedCity}
               onChange={(e) => onCityChange(e.target.value)}
-              aria-label="Filter theatres by city"
+              aria-label="Filter theatres by city or taluk"
               className="pl-9 pr-8 py-2.5 rounded-lg bg-[#0E1525] border border-white/10 text-sm font-medium text-white focus:outline-none focus:border-rose-500"
             >
-              {CITIES.map((city) => (
+              {cityOptions.map((city) => (
                 <option key={city} value={city}>
                   {city}
                 </option>
@@ -64,6 +76,9 @@ export function TheatresPage({
           </div>
         </div>
       </div>
+
+      {/* Karnataka All 31 Districts & 237 Taluks Search */}
+      <DistrictTalukFinder onSelectLocation={onSelectTalukLocation} />
 
       {/* Date Selector Strip */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -109,8 +124,19 @@ export function TheatresPage({
                 className="bg-[#0E1525] border border-white/10 rounded-xl p-6 space-y-5"
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-white/10 pb-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
+                    {(theatre.district || theatre.taluk) && (
+                      <p className="text-xs font-medium text-rose-400">
+                        {theatre.district} District{theatre.taluk ? ` · ${theatre.taluk} Taluk` : ''}
+                      </p>
+                    )}
                     <h2 className="text-xl font-semibold text-white">{theatre.name}</h2>
+                    {theatre.nearbyLocation && (
+                      <p className="text-sm text-emerald-300 flex items-center gap-1.5">
+                        <Navigation className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{theatre.nearbyLocation}</span>
+                      </p>
+                    )}
                     <p className="text-sm text-slate-400 flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                       <span>{theatre.address}</span>

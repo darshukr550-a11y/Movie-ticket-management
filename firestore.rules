@@ -121,11 +121,14 @@ service cloud.firestore {
 
     function isValidTheatre(data, theatreId) {
       return data.keys().hasAll(['theatre_id', 'name', 'city', 'address', 'screens', 'amenities', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['theatre_id', 'name', 'city', 'address', 'screens', 'amenities', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['theatre_id', 'name', 'city', 'district', 'taluk', 'nearbyLocation', 'address', 'screens', 'amenities', 'createdAt', 'updatedAt']) &&
         isValidId(data.theatre_id) &&
         data.theatre_id == theatreId &&
         isStringBounded(data.name, 1, 140) &&
         isStringBounded(data.city, 1, 64) &&
+        (!('district' in data) || isStringBounded(data.district, 0, 80)) &&
+        (!('taluk' in data) || isStringBounded(data.taluk, 0, 80)) &&
+        (!('nearbyLocation' in data) || isStringBounded(data.nearbyLocation, 0, 200)) &&
         isStringBounded(data.address, 1, 240) &&
         data.screens is number && data.screens >= 1 && data.screens <= 30 &&
         isOptionalStringList(data.amenities, 12) &&

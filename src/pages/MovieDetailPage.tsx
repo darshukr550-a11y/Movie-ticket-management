@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Calendar, Clock, Film, MapPin, Play, Star, Users } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Film, MapPin, Navigation, Play, Search, Star, Users } from 'lucide-react';
+import { DistrictTalukFinder } from '../components/DistrictTalukFinder.tsx';
+import type { TalukLocation } from '../data/karnatakaLocations.ts';
 import type { Movie, Show, Theatre } from '../types.ts';
 import { CITIES, formatCurrencyINR, getUpcomingDates } from '../utils/cinema.ts';
 
@@ -10,6 +12,7 @@ interface MovieDetailPageProps {
   selectedCity: string;
   onCityChange: (city: string) => void;
   onSelectShow: (show: Show) => void;
+  onSelectTalukLocation: (loc: TalukLocation) => Promise<void> | void;
   onBack: () => void;
 }
 
@@ -20,12 +23,19 @@ export function MovieDetailPage({
   selectedCity,
   onCityChange,
   onSelectShow,
+  onSelectTalukLocation,
   onBack,
 }: MovieDetailPageProps) {
   const dates = useMemo(() => getUpcomingDates(4), []);
   const [selectedDate, setSelectedDate] = useState(dates[0]?.iso || '');
   const [showTrailer, setShowTrailer] = useState(false);
+  const [showDistrictFinder, setShowDistrictFinder] = useState(false);
   const showtimesRef = useRef<HTMLElement | null>(null);
+
+  const cityOptions = useMemo(
+    () => Array.from(new Set([...CITIES, selectedCity, ...theatres.map((t) => t.city)])),
+    [theatres, selectedCity]
+  );
 
   const theatreMap = useMemo(() => {
     const map = new Map<string, Theatre>();
@@ -34,9 +44,15 @@ export function MovieDetailPage({
   }, [theatres]);
 
   const matchingShowsByTheatre = useMemo(() => {
-    const matching = shows.filter(
-      (s) => s.movie_id === movie.movie_id && s.city === selectedCity && s.showDate === selectedDate
-    );
+    const matching = shows.filter((s) => {
+      if (s.movie_id !== movie.movie_id || s.showDate !== selectedDate) return false;
+      const theatre = theatreMap.get(s.theatre_id);
+      return (
+        s.city === selectedCity ||
+        theatre?.taluk === selectedCity ||
+        theatre?.district === selectedCity
+      );
+    });
     const grouped = new Map<string, Show[]>();
     matching.forEach((s) => {
       const list = grouped.get(s.theatre_id) || [];
@@ -44,7 +60,7 @@ export function MovieDetailPage({
       grouped.set(s.theatre_id, list);
     });
     return grouped;
-  }, [shows, movie.movie_id, selectedCity, selectedDate]);
+  }, [shows, movie.movie_id, selectedCity, selectedDate, theatreMap]);
 
   const scrollToShowtimes = () => {
     showtimesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -223,22 +239,42 @@ export function MovieDetailPage({
             </p>
           </div>
 
-          <div className="relative flex items-center">
-            <MapPin className="w-4 h-4 text-rose-400 absolute left-3 pointer-events-none" />
-            <select
-              value={selectedCity}
-              onChange={(e) => onCityChange(e.target.value)}
-              aria-label="Select City for Showtimes"
-              className="pl-9 pr-8 py-2.5 rounded-lg bg-[#0E1525] border border-white/10 text-sm font-medium text-white focus:outline-none focus:border-rose-500"
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex items-center">
+              <MapPin className="w-4 h-4 text-rose-400 absolute left-3 pointer-events-none" />
+              <select
+                value={selectedCity}
+                onChange={(e) => onCityChange(e.target.value)}
+                aria-label="Select City or Taluk for Showtimes"
+                className="pl-9 pr-8 py-2.5 rounded-lg bg-[#0E1525] border border-white/10 text-sm font-medium text-white focus:outline-none focus:border-rose-500"
+              >
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDistrictFinder((prev) => !prev)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#121B30] hover:bg-[#192440] border border-white/10 text-sm font-medium text-slate-200 whitespace-nowrap transition-colors"
             >
-              {CITIES.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
+              <Search className="w-4 h-4 text-rose-400" />
+              {showDistrictFinder ? 'Hide Taluk Finder' : 'Search Karnataka District / Taluk'}
+            </button>
           </div>
         </div>
+
+        {showDistrictFinder && (
+          <DistrictTalukFinder
+            compact
+            onSelectLocation={async (loc) => {
+              await onSelectTalukLocation(loc);
+              setShowDistrictFinder(false);
+            }}
+          />
+        )}
 
         {movie.status === 'coming_soon' ? (
           <div className="bg-[#0E1525] border border-white/10 rounded-xl p-8 text-center space-y-2">
@@ -285,7 +321,18 @@ export function MovieDetailPage({
                       className="bg-[#0E1525] border border-white/10 rounded-xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-5"
                     >
                       <div className="space-y-1">
+                        {(theatre.district || theatre.taluk) && (
+                          <p className="text-[11px] font-medium text-rose-400">
+                            {theatre.district} District{theatre.taluk ? ` · ${theatre.taluk} Taluk` : ''}
+                          </p>
+                        )}
                         <h3 className="text-base font-semibold text-white">{theatre.name}</h3>
+                        {theatre.nearbyLocation && (
+                          <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                            <Navigation className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span>{theatre.nearbyLocation}</span>
+                          </p>
+                        )}
                         <p className="text-xs text-slate-400">{theatre.address}</p>
                         <p className="text-xs text-slate-500 pt-1">{theatre.amenities.join(' · ')}</p>
                       </div>

@@ -6,6 +6,10 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import {
+  KARNATAKA_TALUK_LOCATIONS,
+  searchKarnatakaLocations,
+} from './src/data/karnatakaLocations.ts';
+import {
   SEED_MOVIES,
   SEED_THEATRES,
   generateInitialSeatLocks,
@@ -20,7 +24,7 @@ import type {
   ShowSeatLock,
   Theatre,
 } from './src/types.ts';
-import { MAX_SEATS_PER_BOOKING, calculateBookingTotals, getSeatPrice } from './src/utils/cinema.ts';
+import { MAX_SEATS_PER_BOOKING, calculateBookingTotals, getSeatPrice, getUpcomingDates } from './src/utils/cinema.ts';
 
 dotenv.config();
 
@@ -130,6 +134,26 @@ function loadDatabase(): ServerDatabase {
       const raw = fs.readFileSync(DB_FILE, 'utf8');
       const parsed = JSON.parse(raw) as ServerDatabase;
       if (Array.isArray(parsed.movies) && parsed.movies.length > 0) {
+        let changed = false;
+        const existingMovieIds = new Set(parsed.movies.map((m) => m.movie_id));
+        const newMovieIds = new Set<string>();
+        for (const seedMovie of SEED_MOVIES) {
+          if (!existingMovieIds.has(seedMovie.movie_id)) {
+            parsed.movies.push(seedMovie);
+            newMovieIds.add(seedMovie.movie_id);
+            changed = true;
+          }
+        }
+        if (newMovieIds.size > 0) {
+          const allSeedShows = generateSeedShows();
+          const newShows = allSeedShows.filter((s) => newMovieIds.has(s.movie_id));
+          const newLocks = generateInitialSeatLocks(newShows);
+          parsed.shows.push(...newShows);
+          parsed.seatLocks = { ...parsed.seatLocks, ...newLocks };
+        }
+        if (changed) {
+          saveDatabase(parsed);
+        }
         return parsed;
       }
     } catch {
@@ -493,6 +517,128 @@ async function startServer() {
       return;
     }
     res.json({ seats: dbState.seatLocks[showId] || {} });
+  });
+
+  app.get('/api/locations/search', (req: Request, res: Response) => {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const district = typeof req.query.district === 'string' ? req.query.district.trim() : '';
+    let results = searchKarnatakaLocations(q);
+    if (district && district !== 'All') {
+      results = results.filter((r) => r.district.toLowerCase() === district.toLowerCase());
+    }
+    res.json({ locations: results });
+  });
+
+  app.post('/api/theatres/ensure-taluk', (req: Request, res: Response) => {
+    const { district, taluk } = req.body ?? {};
+    if (typeof district !== 'string' || typeof taluk !== 'string') {
+      res.status(400).json({ error: 'Both district and taluk are required.' });
+      return;
+    }
+
+    const match = KARNATAKA_TALUK_LOCATIONS.find(
+      (loc) =>
+        loc.district.toLowerCase() === district.trim().toLowerCase() &&
+        loc.taluk.toLowerCase() === taluk.trim().toLowerCase()
+    );
+    if (!match) {
+      res.status(404).json({ error: 'Matching Karnataka district and taluk not found.' });
+      return;
+    }
+
+    let theatre = dbState.theatres.find((t) => t.theatre_id === match.theatreId);
+    let modified = false;
+
+    if (!theatre) {
+      theatre = {
+        theatre_id: match.theatreId,
+        name: match.theatreName,
+        city: match.taluk,
+        district: match.district,
+        taluk: match.taluk,
+        nearbyLocation: match.nearbyLocation,
+        address: match.address,
+        screens: match.screens,
+        amenities: ['Dolby Digital', 'Laser Projection', 'AC Auditorium'],
+      };
+      dbState.theatres.push(theatre);
+      modified = true;
+    }
+
+    const existingShowCount = dbState.shows.filter((s) => s.theatre_id === theatre!.theatre_id).length;
+    if (existingShowCount === 0) {
+      const dates = getUpcomingDates(4);
+      const nowShowing = dbState.movies.filter((m) => m.status === 'now_showing');
+      const slotDefs = [
+        { time: '10:30 AM', silver: 150, gold: 200, premium: 300 },
+        { time: '02:15 PM', silver: 150, gold: 210, premium: 320 },
+        { time: '06:30 PM', silver: 170, gold: 230, premium: 340 },
+        { time: '09:30 PM', silver: 170, gold: 230, premium: 340 },
+      ];
+
+      let counter = 1;
+      for (const dateObj of dates) {
+        for (let mIdx = 0; mIdx < nowShowing.length; mIdx += 1) {
+          const mv = nowShowing[mIdx];
+          const chosenSlots = mIdx % 2 === 0 ? [slotDefs[0], slotDefs[2]] : [slotDefs[1], slotDefs[3]];
+          for (const slot of chosenSlots) {
+            const showId = `shw_${theatre.theatre_id}_${dateObj.iso.replace(/-/g, '')}_${counter}`;
+            const newShow: Show = {
+              show_id: showId,
+              movie_id: mv.movie_id,
+              theatre_id: theatre.theatre_id,
+              city: theatre.city,
+              screenName: `Screen ${((counter - 1) % theatre.screens) + 1}`,
+              showDate: dateObj.iso,
+              showTime: slot.time,
+              format: mv.formats[0] || '2D',
+              silverPrice: slot.silver,
+              goldPrice: slot.gold,
+              premiumPrice: slot.premium,
+            };
+            dbState.shows.push(newShow);
+            dbState.seatLocks[showId] = {
+              D5: {
+                seat_id: 'D5',
+                show_id: showId,
+                booking_id: `seed_bkg_${showId}`,
+                user_id: 'seed_system',
+                category: 'gold',
+                price: slot.gold,
+                status: 'booked',
+              },
+              D6: {
+                seat_id: 'D6',
+                show_id: showId,
+                booking_id: `seed_bkg_${showId}`,
+                user_id: 'seed_system',
+                category: 'gold',
+                price: slot.gold,
+                status: 'booked',
+              },
+            };
+            counter += 1;
+          }
+        }
+      }
+      modified = true;
+    }
+
+    if (modified) {
+      saveDatabase(dbState);
+    }
+
+    const theatreShows = dbState.shows.filter((s) => s.theatre_id === theatre!.theatre_id);
+    const theatreLocks: Record<string, Record<string, ShowSeatLock>> = {};
+    for (const sh of theatreShows) {
+      theatreLocks[sh.show_id] = dbState.seatLocks[sh.show_id] || {};
+    }
+
+    res.json({
+      theatre,
+      shows: theatreShows,
+      seatLocks: theatreLocks,
+    });
   });
 
   // ---------------------------------------------------------------------------

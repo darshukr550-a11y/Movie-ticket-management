@@ -222,6 +222,50 @@ export const SEED_MOVIES: Movie[] = [
     recommended: true,
     featured: false,
   },
+  {
+    movie_id: 'mov_karavali_storm',
+    title: 'Karavali: The Coastal Storm',
+    genre: 'Action / Drama',
+    duration: '2h 26m',
+    rating: 9.2,
+    language: 'Kannada',
+    releaseDate: '2026-11-14',
+    certificate: 'UA',
+    description:
+      'Along the windswept fishing harbours of coastal Karnataka, a fearless boatman confronts an illicit port syndicate during the fierce Karavali monsoon to protect his ancestral village.',
+    posterUrl: '/src/assets/images/poster_karavali_storm_1795494333876.jpg',
+    bannerUrl: '/src/assets/images/poster_karavali_storm_1795494333876.jpg',
+    trailerUrl: 'https://www.youtube.com/embed/8mrVmf239GU',
+    cast: ['Shiva — Rishab Shetty', 'Revathi — Sapthami Gowda', 'Devanna — Kishore Kumar'],
+    crew: ['Director: Hemanth M. Rao', 'Music: B. Ajaneesh Loknath', 'Cinematography: Arvind Kashyap'],
+    formats: ['IMAX 2D', 'Dolby Atmos', '2D'],
+    status: 'now_showing',
+    trending: true,
+    recommended: true,
+    featured: false,
+  },
+  {
+    movie_id: 'mov_bengaluru_midnight',
+    title: 'Bengaluru Midnight',
+    genre: 'Mystery / Thriller',
+    duration: '2h 08m',
+    rating: 8.8,
+    language: 'Kannada',
+    releaseDate: '2026-11-20',
+    certificate: 'UA',
+    description:
+      'During a rain-swept blackout across Indiranagar and MG Road, an investigative radio host follows five encrypted voice notes left inside a vintage car to uncover a decade-old disappearance.',
+    posterUrl: '/src/assets/images/poster_bengaluru_noir_1795494334522.jpg',
+    bannerUrl: '/src/assets/images/poster_bengaluru_noir_1795494334522.jpg',
+    trailerUrl: 'https://www.youtube.com/embed/EXeTwQWrcwY',
+    cast: ['Vikram — Rakshit Shetty', 'Ananya — Rukmini Vasanth', 'ACP Raghu — Achyuth Kumar'],
+    crew: ['Director: Pawan Kumar', 'Music: Charan Raj', 'Cinematography: Advaitha Gurumurthy'],
+    formats: ['Dolby Atmos', '2D'],
+    status: 'now_showing',
+    trending: true,
+    recommended: true,
+    featured: false,
+  },
 ];
 
 export const SEED_THEATRES: Theatre[] = [
@@ -324,10 +368,10 @@ export function generateSeedShows(): Show[] {
   for (const theatre of SEED_THEATRES) {
     for (let dIdx = 0; dIdx < dates.length; dIdx += 1) {
       const dateIso = dates[dIdx].iso;
-      // Schedule 4 distinct now-showing movies per theatre per day
-      for (let mOffset = 0; mOffset < 4; mOffset += 1) {
-        const movie = nowShowing[(SEED_THEATRES.indexOf(theatre) + mOffset + dIdx) % nowShowing.length];
-        const slotsForMovie = mOffset === 0 ? [timeSlots[0], timeSlots[2], timeSlots[3]] : [timeSlots[mOffset], timeSlots[(mOffset + 2) % timeSlots.length]];
+      // Schedule 5 distinct now-showing movies per theatre per day so all languages (including Kannada) are represented
+      for (let mOffset = 0; mOffset < 5; mOffset += 1) {
+        const movie = nowShowing[(SEED_THEATRES.indexOf(theatre) * 2 + mOffset + dIdx) % nowShowing.length];
+        const slotsForMovie = mOffset === 0 ? [timeSlots[0], timeSlots[2], timeSlots[3]] : [timeSlots[mOffset % timeSlots.length], timeSlots[(mOffset + 2) % timeSlots.length]];
         for (const slot of slotsForMovie) {
           const format = movie.formats[slot.formatIdx % movie.formats.length] || '2D';
           shows.push({

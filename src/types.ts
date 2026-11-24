@@ -42,6 +42,9 @@ export interface Theatre {
   theatre_id: string;
   name: string;
   city: string;
+  district?: string;
+  taluk?: string;
+  nearbyLocation?: string;
   address: string;
   screens: number;
   amenities: string[];

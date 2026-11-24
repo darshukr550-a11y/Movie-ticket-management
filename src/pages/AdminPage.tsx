@@ -582,10 +582,20 @@ export function AdminPage({
                     <input
                       type="text"
                       required
+                      list="movie-language-options"
                       value={movieLanguage}
                       onChange={(e) => setMovieLanguage(e.target.value)}
                       className="mt-1 w-full px-3 py-2 rounded-lg bg-[#060913] border border-white/10 text-sm text-white"
                     />
+                    <datalist id="movie-language-options">
+                      <option value="Kannada" />
+                      <option value="English" />
+                      <option value="Hindi" />
+                      <option value="Tamil" />
+                      <option value="Malayalam" />
+                      <option value="Telugu" />
+                      <option value="Japanese" />
+                    </datalist>
                   </label>
                   <label className="block text-xs font-medium text-slate-300">
                     Duration
